@@ -1,0 +1,479 @@
+# Build Your First Keploy Test Suite for a Go API
+
+A beginner-friendly walkthrough of recording and replaying API tests with Keploy, using a real Go application and MySQL.
+
+---
+
+## What you'll build
+
+By the end of this tutorial, you will have taken a small Go URL-shortener API, pointed Keploy at it, sent a few real HTTP requests, and watched Keploy turn those requests into a fully automated test suite — without writing a single test by hand.
+
+The application exposes three endpoints:
+
+- **`POST /create`** — shorten a URL
+- **`GET /all`** — list every stored link
+- **`GET /links/:id`** — redirect to the original URL
+
+You'll exercise all three, and Keploy will capture each interaction — including the MySQL queries the app makes behind the scenes — so you can replay them later as deterministic regression tests.
+
+> **What makes this different from normal testing:** instead of *inventing* requests and expected responses up front, you use the application normally and let Keploy *observe* what happens. Tests are grounded in real behavior, not assumptions.
+
+---
+
+## Before you start
+
+Make sure you have these installed before continuing. The exact versions don't need to match, but the major versions should be close.
+
+| Tool | Version used in this tutorial | Install link |
+| --- | --- | --- |
+| **Go** | 1.27.1 | [go.dev/dl](https://go.dev/dl/) |
+| **Docker** | 29.1.3 | [docker.com](https://docs.docker.com/get-docker/) |
+| **Keploy CLI** | 3.8.49 | [keploy.io/docs](https://keploy.io/docs/server/installation/) |
+| **Git** | 2.54.0 | [git-scm.com](https://git-scm.com/downloads) |
+| **curl** | any | Usually pre-installed on macOS and Linux |
+
+You don't need prior experience with Keploy. You don't need a pre-written test suite. You don't even need to understand how the Go application works internally.
+
+> **Platform note:** this tutorial was run on macOS (Apple Silicon). The commands work the same on Linux. On Windows, use WSL2.
+
+---
+
+## The workflow
+
+Here is the complete process at a glance:
+
+```text
+1. Clone the sample app
+2. Start MySQL
+3. Set the connection string
+4. Build the Go binary
+5. Start the app through Keploy in record mode
+6. Send real API requests
+7. Stop recording
+8. Replay the recorded tests
+9. Confirm the tests pass
+```
+
+The key idea is that steps 5–7 are the **record phase** and step 8 is the **replay phase**. Keploy separates these two concerns cleanly.
+
+---
+
+## Step 1: Start MySQL
+
+First, clone the sample repository and navigate to the `mux-mysql` application:
+
+```bash
+git clone https://github.com/keploy/samples-go.git
+cd samples-go/mux-mysql
+```
+
+The application needs a running MySQL instance. The easiest way is to use Docker Compose, which the sample repo already provides:
+
+```bash
+docker compose up -d
+```
+
+Wait a few seconds for MySQL to initialize. You can check its status with:
+
+```bash
+docker compose logs -f db
+```
+
+Look for a line that says `ready for connections`. Once you see it, press `Ctrl+C` to stop following the logs.
+
+Now set the connection string that the Go application expects:
+
+```bash
+export ConnectionString="root:my-secret-pw@tcp(localhost:3306)/mysql"
+```
+
+> **Why this matters:** the Go application reads `ConnectionString` from the environment to connect to MySQL. If this variable is missing or wrong, the app will crash on startup. We'll revisit this in the troubleshooting section.
+
+### Checkpoint
+
+Before moving on, verify:
+
+- Docker is running
+- MySQL container is healthy on port `3306`
+- `ConnectionString` is exported in your terminal session
+
+---
+
+## Step 2: Build the Go application
+
+Build the application into a compiled binary:
+
+```bash
+go build -o main -cover
+```
+
+Verify the binary exists:
+
+```bash
+ls -l main
+```
+
+You should see a file named `main`.
+
+> **Why build instead of `go run`?** Keploy instruments the running process to intercept network traffic. On macOS, giving Keploy a single compiled binary (`./main`) is more reliable than letting `go run` create a temporary process. This was one of the first things I had to learn — `go run .` works for development, but Keploy needs the actual executable.
+
+---
+
+## Step 3: Start Keploy in record mode
+
+This is where things get interesting. Instead of running the app directly, you start it *through Keploy*:
+
+```bash
+keploy record -c "./main"
+```
+
+Keploy will launch the application as a child process and begin intercepting all network traffic — both the incoming HTTP requests to the API and the outgoing MySQL queries.
+
+You should see output similar to:
+
+```text
+Keploy agent is ready to record test cases and mocks.
+Starting Application : {"executing_cmd": "... ./main"}
+```
+
+### Keep this terminal open
+
+Do not close this terminal. The application is running inside Keploy's recording session. Everything you do next will be captured.
+
+The architecture while recording looks like this:
+
+```text
+Your curl requests
+       ↓
+     Keploy (intercepting)
+       ↓
+   Go application
+       ↓
+     MySQL
+```
+
+Keploy sits between you and the app, and between the app and its database. It watches everything.
+
+---
+
+## Step 4: Exercise the API
+
+Open a **second terminal window**. Leave the Keploy recording session running in the first.
+
+Now send real requests to the API. Each request you make will become a test case.
+
+### 4.1 Check the current links
+
+```bash
+curl -i http://localhost:8080/all
+```
+
+If the database is empty, you'll get an empty list. That's expected — the important thing is that the request reaches the application and returns a response.
+
+### 4.2 Create a link
+
+```bash
+curl -i -X POST http://localhost:8080/create \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://github.com"}'
+```
+
+The API should return a response containing the new link, for example:
+
+```text
+/links/1
+```
+
+The exact ID may differ on your machine.
+
+### 4.3 Retrieve all links
+
+```bash
+curl -i http://localhost:8080/all
+```
+
+This time you should see the link you just created in the response. This confirms the app can write to and read from MySQL.
+
+### 4.4 Follow the generated link
+
+```bash
+curl -i http://localhost:8080/links/1
+```
+
+Replace `1` with whatever ID your app returned. You should see a redirect:
+
+```text
+HTTP/1.1 307 Temporary Redirect
+Location: https://github.com
+```
+
+> **What just happened behind the scenes:** for each of these four requests, Keploy captured the full HTTP request and response, and also recorded every MySQL query the app made while handling the request. All of this is written to disk as YAML files.
+
+---
+
+## Step 5: Stop recording
+
+Go back to the first terminal (where Keploy is running) and press:
+
+```text
+Ctrl + C
+```
+
+Keploy will finish writing the recorded data and exit. You should now have a `keploy` directory in your project:
+
+```text
+keploy/
+├── reports/
+└── test-set-1/
+    ├── config.yaml
+    ├── mappings.yaml
+    ├── mocks.yaml
+    └── tests/
+        ├── get-all-1.yaml
+        ├── get-links-by-id-1.yaml
+        └── post-create-1.yaml
+```
+
+Each file in `tests/` corresponds to one of the API requests you sent. The `mocks.yaml` contains the recorded MySQL interactions. The exact filenames may vary depending on what you recorded.
+
+---
+
+## Step 6: Understand what Keploy created
+
+Keploy generated two kinds of artifacts:
+
+**Test cases** capture the HTTP request and the expected response:
+
+```text
+POST /create  →  post-create-1.yaml
+GET  /all     →  get-all-1.yaml
+GET  /links/1 →  get-links-by-id-1.yaml
+```
+
+**Dependency mocks** capture what happened between the app and MySQL during each request. During replay, Keploy uses these mocks instead of hitting the real database.
+
+### Why mocks matter
+
+Imagine your app runs a `SELECT * FROM links` query while handling `GET /all`. During recording, Keploy sees that query and the result MySQL returned.
+
+During replay, Keploy intercepts the same query and returns the *recorded* result — so the test doesn't depend on what's currently in the database. This makes tests repeatable even if the database is empty or has changed since the recording.
+
+> **This is the key insight:** Keploy doesn't just test HTTP responses. It records the full dependency graph — HTTP in, database out — and replays the whole interaction deterministically.
+
+---
+
+## Step 7: Replay the recorded tests
+
+Make sure the `ConnectionString` is still set in your terminal:
+
+```bash
+export ConnectionString="root:my-secret-pw@tcp(localhost:3306)/mysql"
+```
+
+Then replay:
+
+```bash
+keploy test -c "./main"
+```
+
+Keploy will start the application again, replay each recorded request, compare the actual response to the recorded snapshot, and report whether each test passed or failed.
+
+You should see individual results:
+
+```text
+post-create-1        passed
+get-all-1            passed
+get-links-by-id-1    passed
+```
+
+---
+
+## Step 8: Verify the result
+
+In my run, Keploy reported:
+
+```text
+Total tests: 3
+Passed: 3
+Failed: 0
+```
+
+And:
+
+```text
+All 3 test(s) passed across 1 test-set(s).
+Suite is green and dependency-free.
+```
+
+That's the result we want. Three real API interactions have become three repeatable, automated tests — with dependency mocks — and zero test code written by hand.
+
+---
+
+## What actually happened
+
+The entire process can be summarized in two phases:
+
+```text
+         RECORD PHASE              REPLAY PHASE
+
+    Real API requests          Recorded test cases
+           │                          │
+           ▼                          ▼
+    ┌─────────────┐           ┌─────────────┐
+    │   Keploy    │           │   Keploy    │
+    └──────┬──────┘           └──────┬──────┘
+           │                         │
+    ┌──────▼──────┐           ┌──────▼──────┐
+    │   Go API    │           │   Go API    │
+    └──────┬──────┘           └─────────────┘
+           │                         │
+    ┌──────▼──────┐             Compare
+    │    MySQL    │            responses
+    └─────────────┘                  │
+           │                    PASS / FAIL
+           ▼
+    Tests + Mocks
+    saved to disk
+```
+
+During recording, everything is real — real requests, real database queries, real responses.
+
+During replay, Keploy feeds the same requests back to the app and mocks the database, then checks whether the responses still match. If something changed — a broken handler, a schema migration, a regression — the test fails and tells you exactly what diverged.
+
+### The two commands to remember
+
+```bash
+keploy record -c "./main"
+```
+
+Use this when you want to capture real API traffic as test cases.
+
+```bash
+keploy test -c "./main"
+```
+
+Use this when you want to replay those test cases.
+
+---
+
+## Troubleshooting
+
+These are real issues I encountered while running this quickstart.
+
+### Error: address already in use
+
+```text
+listen tcp4 0.0.0.0:8080: bind: address already in use
+```
+
+This happens when the Go application is already running on port 8080 and you try to start another copy through Keploy.
+
+**Fix:** stop the existing process first. Don't run `./main` separately and then ask Keploy to start it again — let Keploy be the one to launch the application:
+
+```bash
+keploy record -c "./main"
+```
+
+### Error: Connection string empty
+
+```text
+Connection string empty
+```
+
+The terminal where you're running the Keploy command doesn't have the `ConnectionString` variable set.
+
+**Fix:** export it again in the same terminal:
+
+```bash
+export ConnectionString="root:my-secret-pw@tcp(localhost:3306)/mysql"
+```
+
+> **Why this catches people off guard:** environment variables belong to a terminal session. Setting a variable in Terminal A doesn't make it available in Terminal B. If you opened a new tab to run `keploy test`, you need to export the variable again.
+
+### Error: ./main: No such file or directory
+
+```text
+sh: ./main: No such file or directory
+```
+
+The compiled binary doesn't exist in the current directory.
+
+**Fix:** make sure you're in the `mux-mysql` directory and build again:
+
+```bash
+go build -o main -cover
+```
+
+### Error: Go cannot find a main module
+
+```text
+go: cannot find main module
+```
+
+You're probably running Go commands in the wrong directory. This tutorial uses two separate projects:
+
+```text
+Go application         → samples-go/mux-mysql
+Documentation website  → keploy-devrel-assignment
+```
+
+Go commands like `go build` and Keploy commands like `keploy record` belong in the **Go application directory**, not in the Next.js project.
+
+---
+
+## What I learned from running this
+
+The most useful part of this exercise wasn't getting three tests to pass. It was understanding the mental model behind Keploy.
+
+### 1. The application must actually work first
+
+Keploy can't record an application that fails to start. Before you add Keploy to the mix, make sure the app runs normally, can connect to its database, and responds to requests. Keploy observes a working application — it doesn't fix a broken one.
+
+### 2. Port ownership matters
+
+If the application is already running on port 8080, starting another copy through Keploy will fail. This caught me during my first attempt. The fix is simple: stop the existing process before starting it through Keploy.
+
+### 3. Environment variables don't follow you between terminals
+
+The recording terminal and the test terminal can be different processes. If the test terminal needs `ConnectionString`, you need to set it there too. This is basic shell behavior, but it's easy to forget in the middle of a tutorial.
+
+### 4. Recording is not the same as testing
+
+This was the biggest conceptual shift. During recording, Keploy simply watches. During replay, Keploy actively compares. These are two distinct phases with different goals:
+
+- **Record** → create the test material from real behavior
+- **Test** → replay that material and verify nothing has changed
+
+### 5. The tests are grounded in reality
+
+Instead of starting with *"How do I write three test cases?"*, the workflow starts with *"How does my application actually behave?"* — and then Keploy turns those real interactions into tests. For someone new to API testing, this is a much more approachable starting point.
+
+---
+
+## Final takeaway
+
+Keploy lets you start with real API behavior and turn it into repeatable, automated tests — without writing test code, without managing database fixtures, and without manually constructing expected responses.
+
+The workflow is:
+
+```text
+Run → Record → Generate → Replay → Verify
+```
+
+If you can use `curl`, you can create a Keploy test suite.
+
+### Final checklist
+
+Before calling this tutorial complete, verify:
+
+- [ ] MySQL is running
+- [ ] `ConnectionString` is configured
+- [ ] The Go application builds successfully
+- [ ] Keploy can start the application
+- [ ] At least one API request was recorded
+- [ ] Keploy generated test cases
+- [ ] Keploy generated dependency mocks
+- [ ] The recorded tests replay successfully
+- [ ] All tests pass
+
+If all of those are true, you've gone from a running Go API to a repeatable Keploy test suite — in about ten minutes.
