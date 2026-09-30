@@ -3,7 +3,6 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { SidebarNav, MobileNavToggle } from "./components/SidebarNav";
-import { TableOfContents } from "./components/TableOfContents";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -28,22 +27,51 @@ export const metadata: Metadata = {
   },
 };
 
-const sections = [
-  { id: "what-youll-build", label: "What You'll Build" },
-  { id: "before-you-start", label: "Before You Start" },
-  { id: "the-workflow", label: "The Workflow" },
-  { id: "step-1-start-mysql", label: "Start MySQL" },
-  { id: "step-2-build-the-go-application", label: "Build the App" },
-  { id: "step-3-start-keploy-in-record-mode", label: "Record Mode" },
-  { id: "step-4-exercise-the-api", label: "Exercise the API" },
-  { id: "step-5-stop-recording", label: "Stop Recording" },
-  { id: "step-6-understand-what-keploy-created", label: "What Keploy Created" },
-  { id: "step-7-replay-the-recorded-tests", label: "Replay Tests" },
-  { id: "step-8-verify-the-result", label: "Verify Results" },
-  { id: "what-actually-happened", label: "What Happened" },
-  { id: "troubleshooting", label: "Troubleshooting" },
-  { id: "what-i-learned-from-running-this", label: "What I Learned" },
-  { id: "final-takeaway", label: "Final Takeaway" },
+const navGroups = [
+  {
+    title: "Introduction",
+    items: [
+      { id: "start-here", label: "Start here" },
+      { id: "what-youll-build", label: "What you'll build" },
+      { id: "what-is-keploy", label: "What is Keploy?" },
+      { id: "the-mental-model", label: "The mental model" },
+      { id: "before-you-start", label: "Before you start" },
+      { id: "the-workflow", label: "The workflow" },
+    ],
+  },
+  {
+    title: "Setup",
+    items: [
+      { id: "step-1-get-the-sample-application", label: "Get the sample app", step: 1 },
+      { id: "step-2-start-mysql", label: "Start MySQL", step: 2 },
+      { id: "step-3-build-the-go-application", label: "Build the app", step: 3 },
+    ],
+  },
+  {
+    title: "Record",
+    items: [
+      { id: "step-4-start-keploy-in-record-mode", label: "Start record mode", step: 4 },
+      { id: "step-5-exercise-the-api", label: "Exercise the API", step: 5 },
+      { id: "step-6-stop-recording", label: "Stop recording", step: 6 },
+      { id: "step-7-understand-what-keploy-created", label: "What Keploy created", step: 7 },
+    ],
+  },
+  {
+    title: "Replay",
+    items: [
+      { id: "step-8-replay-the-recorded-tests", label: "Replay the tests", step: 8 },
+      { id: "step-9-verify-the-result", label: "Verify the result", step: 9 },
+    ],
+  },
+  {
+    title: "Wrap-up",
+    items: [
+      { id: "what-actually-happened", label: "What actually happened" },
+      { id: "troubleshooting", label: "Troubleshooting" },
+      { id: "what-i-learned-from-running-this", label: "What I learned" },
+      { id: "final-takeaway", label: "Final takeaway" },
+    ],
+  },
 ];
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -70,34 +98,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         {/* Header */}
         <header className="site-header">
           <a href="#" className="site-logo" aria-label="Go to top">
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                width: 26,
-                height: 26,
-                borderRadius: 6,
-                background: "var(--accent-muted)",
-                border: "1px solid rgba(249, 115, 22, 0.2)",
-              }}
-            >
-              <div
-                style={{
-                  width: 10,
-                  height: 10,
-                  borderRadius: "50%",
-                  background: "var(--accent)",
-                }}
-              />
-            </div>
-            <span style={{ fontWeight: 800, letterSpacing: "-0.02em", fontSize: "1.05rem", color: "var(--text-primary)" }}>
-              Keploy
+            <span className="logo-mark" aria-hidden="true">
+              <span />
             </span>
-            <span style={{ color: "var(--border)", margin: "0 2px" }}>/</span>
-            <span style={{ fontWeight: 500, color: "var(--text-secondary)" }}>
-              Go Tutorial
-            </span>
+            <span className="logo-name">Keploy</span>
+            <span className="logo-sep">/</span>
+            <span className="logo-page">Go Tutorial</span>
           </a>
 
           <div className="header-actions">
@@ -128,17 +134,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         {/* Main layout */}
         <div className="doc-layout" style={{ flex: 1 }}>
           {/* Left Sidebar */}
-          <SidebarNav sections={sections} />
+          <SidebarNav groups={navGroups} />
           
           {/* Main content */}
           <main className="doc-main" id="main-content">
             <article className="doc-content">{children}</article>
           </main>
-
-          {/* Right TOC */}
-          <aside className="doc-toc">
-            <TableOfContents />
-          </aside>
         </div>
 
         {/* Footer */}

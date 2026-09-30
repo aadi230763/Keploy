@@ -1,6 +1,8 @@
 import type { MDXComponents } from "mdx/types";
-import type { DetailedHTMLProps, HTMLAttributes, BlockquoteHTMLAttributes } from "react";
+import type { DetailedHTMLProps, HTMLAttributes, BlockquoteHTMLAttributes, TableHTMLAttributes } from "react";
 import { CodeBlock } from "@/app/components/CodeBlock";
+import { PhaseDiagram } from "@/app/components/PhaseDiagram";
+import { Callout } from "@/app/components/Callout";
 
 function slugify(text: string): string {
   return text
@@ -43,6 +45,9 @@ export function useMDXComponents(
   return {
     ...components,
 
+    PhaseDiagram,
+    Callout,
+
     h1: (props) => <Heading level={1} {...props} />,
     h2: (props) => <Heading level={2} {...props} />,
     h3: (props) => <Heading level={3} {...props} />,
@@ -71,6 +76,17 @@ export function useMDXComponents(
 
       return <pre {...props} />;
     },
+
+    table: (
+      props: DetailedHTMLProps<
+        TableHTMLAttributes<HTMLTableElement>,
+        HTMLTableElement
+      >
+    ) => (
+      <div className="table-wrapper">
+        <table {...props} />
+      </div>
+    ),
 
     blockquote: (
       props: DetailedHTMLProps<

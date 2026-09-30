@@ -5,7 +5,74 @@ interface CodeBlockProps {
   code: string;
 }
 
+type BlockKind = "terminal" | "output" | "plain";
+
+const TERMINAL_LANGS = new Set(["bash", "sh", "shell", "zsh"]);
+const OUTPUT_LANGS = new Set(["text", "output", "console"]);
+
+// Human-readable labels so readers can tell at a glance whether a block is
+// something to run, something to expect, or something to read.
+const LABELS: Record<string, string> = {
+  bash: "Terminal",
+  sh: "Terminal",
+  shell: "Terminal",
+  zsh: "Terminal",
+  text: "Output",
+  output: "Output",
+  console: "Output",
+  tree: "Project files",
+  flow: "Flow",
+};
+
+function getKind(language: string): BlockKind {
+  if (TERMINAL_LANGS.has(language)) return "terminal";
+  if (OUTPUT_LANGS.has(language)) return "output";
+  return "plain";
+}
+
+// Prefix the first line of each command with a prompt. Continuation lines
+// (after a trailing backslash) and blank lines are left alone.
+function renderTerminal(code: string) {
+  const lines = code.split("\n");
+  return lines.map((line, i) => {
+    const isContinuation = i > 0 && lines[i - 1].trimEnd().endsWith("\\");
+    const showPrompt = line.trim() !== "" && !isContinuation;
+    return (
+      <span key={i} style={{ display: "block" }}>
+        {showPrompt && (
+          <span
+            aria-hidden="true"
+            style={{ color: "var(--accent)", userSelect: "none" }}
+          >
+            ${" "}
+          </span>
+        )}
+        {!showPrompt && line.trim() !== "" && (
+          <span aria-hidden="true" style={{ userSelect: "none" }}>
+            {"  "}
+          </span>
+        )}
+        {line || "\u00a0"}
+      </span>
+    );
+  });
+}
+
 export function CodeBlock({ language, code }: CodeBlockProps) {
+  const kind = getKind(language);
+  const label = LABELS[language] ?? language;
+
+  if (kind === "output") {
+    return (
+      <div className="output-block" role="region" aria-label="Expected output">
+        <div className="output-label">{label}</div>
+        <pre>
+          <code>{code}</code>
+        </pre>
+      </div>
+    );
+  }
+
   return (
     <div
       style={{
@@ -74,7 +141,7 @@ export function CodeBlock({ language, code }: CodeBlockProps) {
               fontWeight: 600,
             }}
           >
-            {language}
+            {label}
           </span>
           <CopyButton text={code} />
         </div>
@@ -103,7 +170,7 @@ export function CodeBlock({ language, code }: CodeBlockProps) {
             lineHeight: 1.7,
           }}
         >
-          {code}
+          {kind === "terminal" ? renderTerminal(code) : code}
         </code>
       </pre>
     </div>
